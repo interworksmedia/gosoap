@@ -4,10 +4,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"reflect"
+	"sort"
 )
 
 var (
-	soapPrefix = "soap"
+	soapPrefix                            = "soap"
 	customEnvelopeAttrs map[string]string = nil
 )
 
@@ -28,12 +29,14 @@ func (c process) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
 		return fmt.Errorf("definitions is nil")
 	}
 
-	namespace := ""
+	namespace := " "
 	if c.Client.Definitions.Types != nil {
-		schema := c.Client.Definitions.Types[0].XsdSchema[0]
-		namespace = schema.TargetNamespace
-		if namespace == "" && len(schema.Imports) > 0 {
-			namespace = schema.Imports[0].Namespace
+		schema := c.Client.Definitions.Types[0].XsdSchema
+		if len(schema) > 0 {
+			namespace = schema[0].TargetNamespace
+			if namespace == "" && len(schema[0].Imports) > 0 {
+				namespace = schema[0].Imports[0].Namespace
+			}
 		}
 	}
 
@@ -74,16 +77,21 @@ func (tokens *tokenData) recursiveEncode(hm interface{}) {
 
 	switch v.Kind() {
 	case reflect.Map:
-		for _, key := range v.MapKeys() {
+		keys := []string{}
+		for _, k := range v.MapKeys() {
+			keys = append(keys, k.String())
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
 			t := xml.StartElement{
 				Name: xml.Name{
 					Space: "",
-					Local: key.String(),
+					Local: k,
 				},
 			}
-
 			tokens.data = append(tokens.data, t)
-			tokens.recursiveEncode(v.MapIndex(key).Interface())
+			tokens.recursiveEncode(hm.(Params)[k])
 			tokens.data = append(tokens.data, xml.EndElement{Name: t.Name})
 		}
 	case reflect.Slice:
@@ -130,7 +138,7 @@ func (tokens *tokenData) startEnvelope() {
 		e.Attr = make([]xml.Attr, 0)
 		for local, value := range customEnvelopeAttrs {
 			e.Attr = append(e.Attr, xml.Attr{
-				Name: xml.Name{Space: "", Local: local},
+				Name:  xml.Name{Space: "", Local: local},
 				Value: value,
 			})
 		}
